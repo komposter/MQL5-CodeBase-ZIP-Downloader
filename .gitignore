@@ -1,0 +1,18 @@
+# Ignore local sample page folder
+page_example/
+
+# OS/Editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs and temp
+*.log
+*.tmp
+tmp/
+
+# Chrome extension packaging secrets/artifacts
+*.crx
+*.pem
+

@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "MQL5 CodeBase ZIP Downloader",
+  "version": "0.1.0",
+  "description": "Downloads all CodeBase files from mql5.com into a ZIP with correct folder structure.",
+  "action": {
+    "default_title": "Download CodeBase ZIP"
+  },
+  "permissions": ["downloads", "scripting", "activeTab"],
+  "host_permissions": ["https://www.mql5.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.mql5.com/*/code/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
+
