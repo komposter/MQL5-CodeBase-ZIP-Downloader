@@ -2,21 +2,41 @@ function q(s,c){return c?c.querySelector(s):document.querySelector(s)}
 function qa(s,c){return c?Array.from(c.querySelectorAll(s)):Array.from(document.querySelectorAll(s))}
 function normPath(s){return s.replace(/^\\/,'').replace(/\\/g,'/')}
 function enc(str){return new TextEncoder().encode(str)}
-function ts(){const d=new Date();const t=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1);const da=((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate();return {t,da}}
+function dosTimeDate(d){const t=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1);const da=((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate();return {t,da}}
 function crc32(buf){const table=(function(){let t=new Uint32Array(256);for(let i=0;i<256;i++){let c=i;for(let j=0;j<8;j++){c=((c&1)?(0xEDB88320^(c>>>1)):(c>>>1))}t[i]=c>>>0}return t})();let c=0^(-1);const u=new Uint8Array(buf);for(let i=0;i<u.length;i++){c=(c>>>8)^table[(c^u[i])&0xFF]}return (c^(-1))>>>0}
-async function fetchArrayBuffer(url){const r=await fetch(url,{credentials:'include'});const b=await r.arrayBuffer();return b}
+async function fetchEntry(url,fallbackDate){const r=await fetch(url,{credentials:'include'});const lm=r.headers.get('Last-Modified');let fileDate=fallbackDate; if(lm){const d=new Date(lm); if(!isNaN(d.getTime())) fileDate=d}
+  const b=await r.arrayBuffer(); return {buf:b,date:fileDate}}
+function parseUpdateDate(){
+  const modMeta=q('meta[property="article:modified_time"]');
+  if(modMeta){const d=modMeta.getAttribute('content'); const dd=new Date(d); if(!isNaN(dd.getTime())) return dd}
+  const dl=q('dl.code-table');
+  if(dl){const dts=qa('dt',dl);let publishedDate;
+    for(const dt of dts){
+      let txt=(dt.textContent||'').toLowerCase().trim().replace(/:$/, '');
+      txt=txt.replace(/ё/g,'е');
+      if(/updated|обновлен|обновлено|actualizado|aktualisiert|aggiornato|更新/.test(txt)){
+        const dd=dt.nextElementSibling; if(dd){const t=q('time',dd); if(t){const val=t.getAttribute('datetime')||t.getAttribute('title')||t.textContent; const parsed=new Date(val); if(!isNaN(parsed.getTime())) return parsed}}
+      }
+      if(/published|опубликован|publicado|veröffentlicht|pubblicato|发布/.test(txt)){
+        const dd=dt.nextElementSibling; if(dd){const t=q('time',dd); if(t){const val=t.getAttribute('datetime')||t.getAttribute('title')||t.textContent; const parsed=new Date(val); if(!isNaN(parsed.getTime())) publishedDate=parsed}}
+      }
+    }
+    if(publishedDate) return publishedDate
+  }
+  const pubMeta=q('meta[property="article:published_time"]'); if(pubMeta){const d=pubMeta.getAttribute('content'); const dd=new Date(d); if(!isNaN(dd.getTime())) return dd}
+  return new Date()
+}
 async function collectFiles(){let container=q('#codeAttachments')||q('.grouped-attachments');if(!container) return []
 const tools=container.parentElement&&container.parentElement.querySelector('.grouped-attachments-tools .expand');if(tools){try{tools.click()}catch(e){}}
 let currentPath='';const items=[];const children=Array.from(container.children);for(const node of children){if(node.classList&&node.classList.contains('group-header')){currentPath=normPath(node.textContent.trim())}else if(node.classList&&node.classList.contains('attachItem')){const a=q('a.attach-item__link',node);if(a){const name=(a.getAttribute('title')||a.textContent||'').trim();const href=a.getAttribute('href');if(href){items.push({path:(currentPath?currentPath+'/':'')+name,url:href})}}}}
 return items}
-function buildZip(entries){const parts=[];const central=[];let offset=0;const d=ts();return Promise.all(entries.map(async e=>{const nameBytes=enc(e.path);const data=await fetchArrayBuffer(e.url);const c=crc32(data);const size=data.byteLength;const lf=new Uint8Array(30+nameBytes.length+size);const v=new DataView(lf.buffer);v.setUint32(0,0x04034b50,true);v.setUint16(4,20,true);v.setUint16(6,0,true);v.setUint16(8,0,true);v.setUint16(10,d.t,true);v.setUint16(12,d.da,true);v.setUint32(14,c,true);v.setUint32(18,size,true);v.setUint32(22,size,true);v.setUint16(26,nameBytes.length,true);v.setUint16(28,0,true);lf.set(nameBytes,30);lf.set(new Uint8Array(data),30+nameBytes.length);parts.push(lf);const cf=new Uint8Array(46+nameBytes.length);const w=new DataView(cf.buffer);w.setUint32(0,0x02014b50,true);w.setUint16(4,20,true);w.setUint16(6,20,true);w.setUint16(8,0,true);w.setUint16(10,0,true);w.setUint16(12,d.t,true);w.setUint16(14,d.da,true);w.setUint32(16,c,true);w.setUint32(20,size,true);w.setUint32(24,size,true);w.setUint16(28,nameBytes.length,true);w.setUint16(30,0,true);w.setUint16(32,0,true);w.setUint16(34,0,true);w.setUint16(36,0,true);w.setUint32(38,0,true);w.setUint32(42,offset,true);cf.set(nameBytes,46);central.push({buf:cf,off:offset});offset+=lf.length})).then(()=>{
+function buildZip(entries){const parts=[];const central=[];let offset=0;const updateDate=parseUpdateDate();return Promise.all(entries.map(async e=>{const nameBytes=enc(e.path);const fetched=await fetchEntry(e.url,updateDate);const data=fetched.buf; const chosenDate=fetched.date||updateDate; const d=dosTimeDate(chosenDate); const c=crc32(data);const size=data.byteLength;const lf=new Uint8Array(30+nameBytes.length+size);const v=new DataView(lf.buffer);v.setUint32(0,0x04034b50,true);v.setUint16(4,20,true);v.setUint16(6,0,true);v.setUint16(8,0,true);v.setUint16(10,d.t,true);v.setUint16(12,d.da,true);v.setUint32(14,c,true);v.setUint32(18,size,true);v.setUint32(22,size,true);v.setUint16(26,nameBytes.length,true);v.setUint16(28,0,true);lf.set(nameBytes,30);lf.set(new Uint8Array(data),30+nameBytes.length);parts.push(lf);const cf=new Uint8Array(46+nameBytes.length);const w=new DataView(cf.buffer);w.setUint32(0,0x02014b50,true);w.setUint16(4,20,true);w.setUint16(6,20,true);w.setUint16(8,0,true);w.setUint16(10,0,true);w.setUint16(12,d.t,true);w.setUint16(14,d.da,true);w.setUint32(16,c,true);w.setUint32(20,size,true);w.setUint32(24,size,true);w.setUint16(28,nameBytes.length,true);w.setUint16(30,0,true);w.setUint16(32,0,true);w.setUint16(34,0,true);w.setUint16(36,0,true);w.setUint32(38,0,true);w.setUint32(42,offset,true);cf.set(nameBytes,46);central.push({buf:cf,off:offset});offset+=lf.length})).then(()=>{
 let cdSize=0;let cdParts=[];for(const c of central){cdParts.push(c.buf);cdSize+=c.buf.length}
 const end=new Uint8Array(22);const dv=new DataView(end.buffer);dv.setUint32(0,0x06054b50,true);dv.setUint16(4,0,true);dv.setUint16(6,0,true);dv.setUint16(8,central.length,true);dv.setUint16(10,central.length,true);dv.setUint32(12,cdSize,true);let dataSize=0;for(const p of parts){dataSize+=p.length}
 dv.setUint32(16,dataSize,true);dv.setUint16(20,0,true);
 const totalSize=dataSize+cdSize+end.length;const out=new Uint8Array(totalSize);let pos=0;for(const p of parts){out.set(p,pos);pos+=p.length}for(const cp of cdParts){out.set(cp,pos);pos+=cp.length}out.set(end,pos);return new Blob([out],{type:'application/zip'})})}
 async function startDownload(){const files=await collectFiles();if(!files.length) return
-const blob=await buildZip(files);const metaTitle=(q('h1 span')||q('h1')||document.title).textContent.trim().replace(/\s+/g,'_');const id=(location.pathname.split('/').pop()||'code');const name=`MQL5_CodeBase_${id}_${metaTitle}.zip`;const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}
+const blob=await buildZip(files);const metaTitle=(q('h1 span')||q('h1')||document.title).textContent.trim();const id=(location.pathname.split('/').pop()||'code');const name=`MQL5 CodeBase ${id} ${metaTitle}.zip`;const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}
 function addButton(){const lang=document.documentElement.getAttribute('lang')||'en';let text='Download CodeBase ZIP';if(lang==='ru') text='Скачать CodeBase ZIP';if(lang==='es') text='Descargar CodeBase ZIP';if(lang==='de') text='CodeBase als ZIP herunterladen';const host=q('.grouped-attachments-help')||q('#codeAttachments')?.parentElement;const btn=document.createElement('a');btn.href='javascript:void(0)';btn.className='button button_blue-gray-border';btn.textContent=text;btn.addEventListener('click',startDownload);if(host){host.appendChild(btn)} else {const f=document.createElement('div');f.style.position='fixed';f.style.bottom='20px';f.style.right='20px';f.style.zIndex='99999';f.appendChild(btn);document.body.appendChild(f)}}
 addButton()
 chrome.runtime.onMessage.addListener((msg)=>{if(msg&&msg.type==='MQL5_CODEBASE_ZIP_DOWNLOAD'){startDownload()}})
-

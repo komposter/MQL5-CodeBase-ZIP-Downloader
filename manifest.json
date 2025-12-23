@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MQL5 CodeBase ZIP Downloader",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Downloads all CodeBase files from mql5.com into a ZIP with correct folder structure.",
   "action": {
     "default_title": "Download CodeBase ZIP"
@@ -19,4 +19,3 @@
     }
   ]
 }
-
