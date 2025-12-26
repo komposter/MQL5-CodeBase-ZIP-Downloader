@@ -1,6 +1,20 @@
 function q(s,c){return c?c.querySelector(s):document.querySelector(s)}
 function qa(s,c){return c?Array.from(c.querySelectorAll(s)):Array.from(document.querySelectorAll(s))}
-function normPath(s){return s.replace(/^\\/,'').replace(/\\/g,'/')}
+function sanitizeText(s){
+  return (s||'')
+    .replace(/[\u200B-\u200F\u202A-\u202E\u00A0\u202F]/g,' ')
+    .replace(/\s+/g,' ')
+    .trim()
+}
+function normPath(s){
+  const t=sanitizeText(s)
+  return t.replace(/^\\+/,'').replace(/\\/g,'/')
+}
+function joinPath(base,name){
+  const b=(base||'').replace(/\/+$/,'')
+  const n=sanitizeText(name)
+  return b? (b+"/"+n) : n
+}
 function enc(str){return new TextEncoder().encode(str)}
 function dosTimeDate(d){const t=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1);const da=((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate();return {t,da}}
 function crc32(buf){const table=(function(){let t=new Uint32Array(256);for(let i=0;i<256;i++){let c=i;for(let j=0;j<8;j++){c=((c&1)?(0xEDB88320^(c>>>1)):(c>>>1))}t[i]=c>>>0}return t})();let c=0^(-1);const u=new Uint8Array(buf);for(let i=0;i<u.length;i++){c=(c>>>8)^table[(c^u[i])&0xFF]}return (c^(-1))>>>0}
@@ -28,7 +42,7 @@ function parseUpdateDate(){
 }
 async function collectFiles(){let container=q('#codeAttachments')||q('.grouped-attachments');if(!container) return []
 const tools=container.parentElement&&container.parentElement.querySelector('.grouped-attachments-tools .expand');if(tools){try{tools.click()}catch(e){}}
-let currentPath='';const items=[];const children=Array.from(container.children);for(const node of children){if(node.classList&&node.classList.contains('group-header')){currentPath=normPath(node.textContent.trim())}else if(node.classList&&node.classList.contains('attachItem')){const a=q('a.attach-item__link',node);if(a){const name=(a.getAttribute('title')||a.textContent||'').trim();const href=a.getAttribute('href');if(href){items.push({path:(currentPath?currentPath+'/':'')+name,url:href})}}}}
+let currentPath='';const items=[];const children=Array.from(container.children);for(const node of children){if(node.classList&&node.classList.contains('group-header')){currentPath=normPath(node.textContent)}else if(node.classList&&node.classList.contains('attachItem')){const a=q('a.attach-item__link',node);if(a){const name=(a.getAttribute('title')||a.textContent||'');const href=a.getAttribute('href');if(href){items.push({path:joinPath(currentPath,name),url:href})}}}}
 return items}
 function buildZip(entries){const parts=[];const central=[];let offset=0;const updateDate=parseUpdateDate();return Promise.all(entries.map(async e=>{const nameBytes=enc(e.path);const fetched=await fetchEntry(e.url,updateDate);const data=fetched.buf; const chosenDate=fetched.date||updateDate; const d=dosTimeDate(chosenDate); const c=crc32(data);const size=data.byteLength;const lf=new Uint8Array(30+nameBytes.length+size);const v=new DataView(lf.buffer);v.setUint32(0,0x04034b50,true);v.setUint16(4,20,true);v.setUint16(6,0,true);v.setUint16(8,0,true);v.setUint16(10,d.t,true);v.setUint16(12,d.da,true);v.setUint32(14,c,true);v.setUint32(18,size,true);v.setUint32(22,size,true);v.setUint16(26,nameBytes.length,true);v.setUint16(28,0,true);lf.set(nameBytes,30);lf.set(new Uint8Array(data),30+nameBytes.length);parts.push(lf);const cf=new Uint8Array(46+nameBytes.length);const w=new DataView(cf.buffer);w.setUint32(0,0x02014b50,true);w.setUint16(4,20,true);w.setUint16(6,20,true);w.setUint16(8,0,true);w.setUint16(10,0,true);w.setUint16(12,d.t,true);w.setUint16(14,d.da,true);w.setUint32(16,c,true);w.setUint32(20,size,true);w.setUint32(24,size,true);w.setUint16(28,nameBytes.length,true);w.setUint16(30,0,true);w.setUint16(32,0,true);w.setUint16(34,0,true);w.setUint16(36,0,true);w.setUint32(38,0,true);w.setUint32(42,offset,true);cf.set(nameBytes,46);central.push({buf:cf,off:offset});offset+=lf.length})).then(()=>{
 let cdSize=0;let cdParts=[];for(const c of central){cdParts.push(c.buf);cdSize+=c.buf.length}
